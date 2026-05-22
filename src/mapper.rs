@@ -1,9 +1,7 @@
 /// Glifos de barra ordenados de menor a mayor amplitud.
 ///
-/// Se usan bloques Unicode de octavos para máxima resolución vertical.
-/// Puedes sustituir por cualquier secuencia de caracteres — el mapeo
-/// es puramente posicional.
-const BAR_GLYPHS: &[char] = &[' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+/// Doble bloque para más impacto visual y altura.
+const BAR_GLYPHS: &[char] = &[' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█', '█'];
 
 /// Glifos alternativos más "retro" (ASCII puro + llenos).
 /// Descomenta y asigna a `BAR_GLYPHS` si prefieres este estilo.
@@ -49,7 +47,10 @@ pub fn build_frame_data(values: &[f32], layout: BarLayout) -> Vec<(char, f32)> {
     let mut out = Vec::with_capacity(values.len() * 2);
 
     for (i, &amp) in values.iter().enumerate() {
-        out.push((amp_to_glyph(amp), amp));
+        // Doble bloque para más ancho
+        let glyph = amp_to_glyph(amp);
+        out.push((glyph, amp));
+        out.push((glyph, amp));
 
         if layout == BarLayout::Spaced && i < values.len() - 1 {
             // Espacio separador con amplitud 0 (sin color)
@@ -94,15 +95,16 @@ mod tests {
     fn layout_spaced_inserta_espacios() {
         let v = vec![0.5, 0.5];
         let data = build_frame_data(&v, BarLayout::Spaced);
-        // 2 barras + 1 separador = 3 entradas
-        assert_eq!(data.len(), 3);
-        assert_eq!(data[1].0, ' ');
+        // Cada canal se duplica para ganar ancho visual y un separador agrega una entrada extra.
+        assert_eq!(data.len(), 5);
+        assert_eq!(data[2].0, ' ');
     }
 
     #[test]
     fn layout_compact_sin_espacios() {
         let v = vec![0.5, 0.5];
         let data = build_frame_data(&v, BarLayout::Compact);
-        assert_eq!(data.len(), 2);
+        // Cada canal se duplica para ganar ancho visual incluso en modo compacto.
+        assert_eq!(data.len(), 4);
     }
 }

@@ -46,14 +46,20 @@ fn main() -> io::Result<()> {
     loop {
         match reader.next_frame() {
             Err(_) => {
-                // Error de I/O — emite error una vez y termina
+                // Error de I/O — emite error JSON y sigue
+                let out = emitter.emit_error();
+                write_output(&mut writer, &out)?;
+                writer.flush()?;
+                // No break: sigue intentando leer
+            }
+
+            Ok(None) => {
+                // EOF: emite error JSON y termina
                 let out = emitter.emit_error();
                 write_output(&mut writer, &out)?;
                 writer.flush()?;
                 break;
             }
-
-            Ok(None) => break, // CAVA cerró el pipe limpiamente
 
             Ok(Some(frame)) => {
                 smoother.update(&frame.values);

@@ -1,10 +1,17 @@
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
 /// Modo de degradado de color aplicado a las barras.
 ///
 /// Cada modo define cómo se asigna el color a cada canal/glifo.
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum ColorMode {
     /// Color por amplitud individual del canal.
-    /// Verde → Amarillo → Naranja → Rojo según qué tan alto esté cada barra.
+    /// Usa la paleta del wallpaper cuando está disponible.
     ByAmplitude,
 
     /// Degradado horizontal fijo: el color depende de la posición del canal
@@ -16,52 +23,90 @@ pub enum ColorMode {
     Flat { color: &'static str },
 }
 
-/// Tabla de colores para `ByAmplitude`.
-///
-/// Cada entrada es un umbral de amplitud y el color Pango hex asociado.
-/// Los umbrales deben estar en orden ascendente.
-const AMP_RAMP: &[(f32, &str)] = &[
-    (0.33, "#69ff47"), // bajo   → verde
-    (0.60, "#ffe234"), // medio  → amarillo
-    (0.80, "#ff8c00"), // alto   → naranja
-    (1.01, "#ff4444"), // pico   → rojo
+#[derive(Debug, Deserialize)]
+struct WalColorsFile {
+    colors: HashMap<String, String>,
+}
+
+const FALLBACK_WAL_PALETTE: &[&str] = &[
+    "#00eaff",
+    "#69ff47",
+    "#ffe234",
+    "#ffb300",
+    "#ff8c00",
+    "#ff4444",
+    "#ff00aa",
+    "#a259ff",
 ];
+
+const WALLPAPER_COLORS_PATH: &str = ".cache/wal/colors.json";
 
 /// Tabla de colores para `ByPosition` (espectro izquierda → derecha).
 ///
 /// Se interpola por posición relativa [0.0, 1.0] del canal en el array.
-const POS_RAMP: &[(f32, &str)] = &[
-    (0.0,  "#7b68ee"), // graves → violeta
-    (0.33, "#00bfff"), // medios → azul claro
-    (0.66, "#00fa9a"), // medios-altos → verde menta
-    (1.0,  "#ff6347"), // agudos → naranja-rojo
+const POS_RAMP: &[(&str, &str)] = &[
+    ("0.0", "#7b68ee"),
+    ("0.33", "#00bfff"),
+    ("0.66", "#00fa9a"),
+    ("1.0", "#ff6347"),
 ];
 
-// ─── Lógica de color ───────────────────────────────────────────────────────────
+static WALLPAPER_PALETTE: OnceLock<Vec<String>> = OnceLock::new();
 
-/// Devuelve el color Pango para una amplitud dada usando `AMP_RAMP`.
-fn color_by_amplitude(amp: f32) -> &'static str {
-    AMP_RAMP
-        .iter()
-        .find(|(threshold, _)| amp <= *threshold)
-        .map(|(_, color)| *color)
-        .unwrap_or("#ff4444")
+fn wallpaper_palette_path() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(WALLPAPER_COLORS_PATH)
 }
 
-/// Devuelve el color Pango para una posición relativa [0.0, 1.0] usando `POS_RAMP`.
-fn color_by_position(pos: f32) -> &'static str {
-    // Busca el segmento entre dos paradas y devuelve la más cercana
-    // (interpolación de color real requeriría parsear hex — esto es suficiente
-    //  para Waybar y se puede extender si hace falta)
-    POS_RAMP
-        .windows(2)
-        .find(|w| pos <= w[1].0)
-        .map(|w| {
-            // Devuelve la parada más cercana al valor de posición
-            let mid = (w[0].0 + w[1].0) / 2.0;
-            if pos < mid { w[0].1 } else { w[1].1 }
-        })
-        .unwrap_or(POS_RAMP.last().unwrap().1)
+pub fn load_palette_from_path(path: &Path) -> Option<Vec<String>> {
+    let raw = fs::read_to_string(path).ok()?;
+    let parsed: WalColorsFile = serde_json::from_str(&raw).ok()?;
+
+    let keys = [
+        "color1", "color2", "color3", "color4", "color5", "color6", "color7", "color8",
+    ];
+
+    let palette = keys
+        .into_iter()
+        .filter_map(|key| parsed.colors.get(key).cloned())
+        .collect::<Vec<_>>();
+
+    if palette.is_empty() {
+        None
+    } else {
+        Some(palette)
+    }
+}
+
+fn current_palette() -> &'static [String] {
+    WALLPAPER_PALETTE.get_or_init(|| {
+        load_palette_from_path(&wallpaper_palette_path())
+            .unwrap_or_else(|| FALLBACK_WAL_PALETTE.iter().map(|color| (*color).to_string()).collect())
+    })
+}
+
+fn color_for_amplitude_from_palette(amp: f32, palette: &[String]) -> String {
+    if palette.is_empty() {
+        return "#ff4444".to_string();
+    }
+
+    let clamped = amp.clamp(0.0, 1.0);
+    let index = ((clamped * (palette.len() - 1) as f32).round() as usize).min(palette.len() - 1);
+    palette[index].clone()
+}
+
+fn color_by_amplitude(amp: f32) -> String {
+    color_for_amplitude_from_palette(amp, current_palette())
+}
+
+fn color_by_position(pos: f32) -> String {
+    let pos = pos.clamp(0.0, 1.0);
+    let next = POS_RAMP
+        .iter()
+        .find(|(threshold, _)| pos <= threshold.parse::<f32>().unwrap_or(1.0))
+        .map(|(_, color)| *color)
+        .unwrap_or(POS_RAMP.last().unwrap().1);
+
+    next.to_string()
 }
 
 // ─── API pública ───────────────────────────────────────────────────────────────
@@ -79,64 +124,77 @@ fn color_by_position(pos: f32) -> &'static str {
 /// assert!(markup.contains("<span"));
 /// ```
 pub fn build_pango_frame(frame_data: &[(char, f32)], mode: ColorMode) -> String {
-    let mut out = String::with_capacity(frame_data.len() * 36);
+    let mut out = String::with_capacity(frame_data.len() * 16);
 
-    // Cuenta solo los canales reales (excluye espacios separadores)
     let total = frame_data.iter().filter(|(c, _)| *c != ' ').count();
     let mut channel_idx: usize = 0;
 
+    let mut current: Option<(String, bool, String)> = None;
+
+    let flush_current = |out: &mut String, current: &mut Option<(String, bool, String)>| {
+        if let Some((color, alpha, text)) = current.take() {
+            out.push_str("<span color='");
+            out.push_str(&color);
+            if alpha {
+                out.push_str("' alpha='40%'>");
+            } else {
+                out.push_str("'>");
+            }
+            out.push_str(&text);
+            out.push_str("</span>");
+        }
+    };
+
     for &(glyph, amp) in frame_data {
         if glyph == ' ' && amp == 0.0 {
-            // Espacio separador — sin markup
+            flush_current(&mut out, &mut current);
             out.push(' ');
             continue;
         }
 
         let color = match mode {
             ColorMode::ByAmplitude => color_by_amplitude(amp),
-
             ColorMode::ByPosition { total_channels } => {
                 let n = total_channels.max(1);
                 let pos = channel_idx as f32 / (n - 1).max(1) as f32;
                 color_by_position(pos)
             }
-
-            ColorMode::Flat { color } => color,
+            ColorMode::Flat { color } => color.to_string(),
         };
 
-        // Opacidad reducida para barras muy bajas — efecto "apagado"
-        if amp < 0.05 {
-            out.push_str(&format!("<span color='{color}' alpha='40%'>{glyph}</span>"));
-        } else {
-            out.push_str(&format!("<span color='{color}'>{glyph}</span>"));
+        let alpha = amp < 0.05;
+
+        match current.as_mut() {
+            Some((current_color, current_alpha, text)) if *current_color == color && *current_alpha == alpha => {
+                text.push(glyph);
+            }
+            _ => {
+                flush_current(&mut out, &mut current);
+                current = Some((color, alpha, glyph.to_string()));
+            }
         }
 
         channel_idx += 1;
-        let _ = total; // usado solo para doc
+        let _ = total;
     }
+
+    flush_current(&mut out, &mut current);
 
     out
 }
 
-/// Genera markup Pango para un estado especial (mute, error, standby).
-///
-/// Devuelve un string con un icono o texto coloreado listo para Waybar.
 pub fn state_markup(state: SpecialState) -> &'static str {
     match state {
-        SpecialState::Muted   => "<span color='#888888'>󰝟</span>",
+        SpecialState::Muted => "<span color='#888888'>󰝟</span>",
         SpecialState::Standby => "<span color='#555555'>▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁</span>",
-        SpecialState::Error   => "<span color='#ff4444'>⚠ cava</span>",
+        SpecialState::Error => "<span color='#ff4444'>⚠ cava</span>",
     }
 }
 
-/// Estados especiales del visualizador.
 #[derive(Debug, Clone, Copy)]
 pub enum SpecialState {
-    /// Audio muteado — muestra icono de silencio.
     Muted,
-    /// Sin señal activa — barras planas en gris.
     Standby,
-    /// CAVA no disponible o pipe roto.
     Error,
 }
 
@@ -146,8 +204,9 @@ mod tests {
 
     #[test]
     fn color_amplitud_limites() {
-        assert_eq!(color_by_amplitude(0.0), "#69ff47");
-        assert_eq!(color_by_amplitude(1.0), "#ff4444");
+        let fallback = FALLBACK_WAL_PALETTE.iter().map(|color| (*color).to_string()).collect::<Vec<_>>();
+        assert_eq!(color_for_amplitude_from_palette(0.0, &fallback), "#00eaff");
+        assert_eq!(color_for_amplitude_from_palette(1.0, &fallback), "#a259ff");
     }
 
     #[test]
@@ -155,6 +214,30 @@ mod tests {
         let izq = color_by_position(0.0);
         let der = color_by_position(1.0);
         assert_ne!(izq, der, "extremos deben tener colores distintos");
+    }
+
+    #[test]
+    fn color_por_amplitud_usa_la_paleta_proporcionada() {
+        let palette = vec!["#111111".to_string(), "#222222".to_string(), "#333333".to_string()];
+        assert_eq!(color_for_amplitude_from_palette(0.0, &palette), "#111111");
+        assert_eq!(color_for_amplitude_from_palette(1.0, &palette), "#333333");
+    }
+
+    #[test]
+    fn carga_paleta_de_wallpaper_desde_json() {
+        let dir = std::env::temp_dir().join(format!("waybar-cavars-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("colors.json");
+        std::fs::write(
+            &file,
+            "{\"colors\":{\"color1\":\"#aa0000\",\"color2\":\"#00aa00\",\"color3\":\"#0000aa\"}}",
+        )
+        .unwrap();
+
+        let palette = load_palette_from_path(&file).unwrap();
+        assert_eq!(palette, vec!["#aa0000", "#00aa00", "#0000aa"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -167,7 +250,7 @@ mod tests {
 
     #[test]
     fn pango_frame_espacio_sin_markup() {
-        // Espacio separador no debe generar <span>
+
         let data = vec![('▄', 0.5), (' ', 0.0), ('▄', 0.5)];
         let markup = build_pango_frame(&data, ColorMode::ByAmplitude);
         let span_count = markup.matches("<span").count();
@@ -186,7 +269,7 @@ mod tests {
         let data = vec![('▄', 0.2), ('▆', 0.7)];
         let markup = build_pango_frame(&data, ColorMode::Flat { color: "#ffffff" });
         assert!(markup.contains("#ffffff"));
-        // No debe aparecer ningún otro color
+
         assert!(!markup.contains("#69ff47"));
     }
 
