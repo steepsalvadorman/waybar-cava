@@ -5,12 +5,11 @@ use crate::colorizer::{self, ColorMode, SpecialState};
 
 // ─── Estructura de salida ──────────────────────────────────────────────────────
 
-/// Payload JSON que Waybar consume por stdout.
-///
-/// Waybar lee una línea JSON por frame cuando el módulo usa `return-type = json`.
+/// Payload JSON por frame. Compatible con Waybar (`return-type = json`)
+/// y con cualquier lector de JSON por línea.
 /// Los campos opcionales se omiten si son `None` para mantener el output limpio.
 #[derive(Serialize)]
-pub struct WaybarOutput {
+pub struct BarOutput {
     /// Texto principal del módulo. Puede contener Pango Markup.
     pub text: String,
 
@@ -18,18 +17,16 @@ pub struct WaybarOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tooltip: Option<String>,
 
-    /// Clase CSS aplicada al widget — útil para colorear el fondo desde GTK.
-    /// Ejemplo: "normal", "peak", "muted".
+    /// Clase CSS aplicada al widget.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class: Option<String>,
 
-    /// Porcentaje numérico expuesto a Waybar (0–100).
-    /// Permite usar el campo como fuente para barras de progreso externas.
+    /// Porcentaje numérico (0–100).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub percentage: Option<u8>,
 }
 
-impl WaybarOutput {
+impl BarOutput {
     /// Crea una salida mínima solo con `text`.
     pub fn text_only(text: impl Into<String>) -> Self {
         Self {
@@ -54,16 +51,16 @@ pub enum VisualizerState {
     Muted,
 }
 
-/// Gestiona el estado del visualizador y genera el `WaybarOutput` por frame.
-pub struct WaybarEmitter {
-    color_mode:      ColorMode,
-    silent_frames:   u32,
-    /// Cuántos frames de silencio consecutivos activan el estado `Silent`.
+/// Gestiona el estado del visualizador y genera el `BarOutput` por frame.
+pub struct BarEmitter {
+    color_mode:       ColorMode,
+    silent_frames:    u32,
+    /// Frames de silencio consecutivos antes de activar el estado `Silent`.
     silent_threshold: u32,
-    state:           VisualizerState,
+    state:            VisualizerState,
 }
 
-impl WaybarEmitter {
+impl BarEmitter {
     /// Crea un emisor con el modo de color deseado.
     ///
     /// `silent_threshold`: frames consecutivos de silencio antes de cambiar estado.
@@ -77,7 +74,7 @@ impl WaybarEmitter {
         }
     }
 
-    /// Genera el `WaybarOutput` para el frame actual.
+    /// Genera el `BarOutput` para el frame actual.
     ///
     /// `frame_data` es la salida de `mapper::build_frame_data`.
     /// `peak` es la amplitud máxima del frame (de `CavaFrame::peak()`).
@@ -87,18 +84,18 @@ impl WaybarEmitter {
         frame_data: &[(char, f32)],
         peak: f32,
         is_silent: bool,
-    ) -> WaybarOutput {
+    ) -> BarOutput {
         self.update_state(is_silent);
 
         match self.state {
-            VisualizerState::Muted => WaybarOutput {
+            VisualizerState::Muted => BarOutput {
                 text:       colorizer::state_markup(SpecialState::Muted).to_string(),
                 tooltip:    Some("Audio muteado".into()),
                 class:      Some("muted".into()),
                 percentage: Some(0),
             },
 
-            VisualizerState::Silent => WaybarOutput {
+            VisualizerState::Silent => BarOutput {
                 text:       colorizer::state_markup(SpecialState::Standby).to_string(),
                 tooltip:    None,
                 class:      Some("silent".into()),
@@ -109,7 +106,7 @@ impl WaybarEmitter {
                 let text = colorizer::build_pango_frame(frame_data, self.color_mode);
                 let pct  = (peak * 100.0).round() as u8;
 
-                WaybarOutput {
+                BarOutput {
                     text,
                     tooltip:    None,
                     class:      Some(css_class_for_peak(peak).into()),
@@ -120,8 +117,8 @@ impl WaybarEmitter {
     }
 
     /// Señala al emisor que CAVA no está disponible.
-    pub fn emit_error(&self) -> WaybarOutput {
-        WaybarOutput {
+    pub fn emit_error(&self) -> BarOutput {
+        BarOutput {
             text:       colorizer::state_markup(SpecialState::Error).to_string(),
             tooltip:    Some("CAVA no disponible".into()),
             class:      Some("error".into()),
@@ -132,7 +129,7 @@ impl WaybarEmitter {
     /// Actualiza `state` y el contador de frames silenciosos.
     fn update_state(&mut self, is_silent: bool) {
         if self.state == VisualizerState::Muted {
-            return; // mute se activa/desactiva externamente
+            return;
         }
 
         if is_silent {
@@ -160,7 +157,7 @@ impl WaybarEmitter {
     }
 }
 
-/// Clase CSS según el nivel de pico — permite estilizar el fondo desde Waybar CSS.
+/// Clase CSS según el nivel de pico.
 fn css_class_for_peak(peak: f32) -> &'static str {
     match peak {
         p if p < 0.33 => "low",
@@ -170,19 +167,18 @@ fn css_class_for_peak(peak: f32) -> &'static str {
     }
 }
 
-// ─── Escritor JSON ────────────────────────────────────────────────────────────
+// ─── Escritores de salida ─────────────────────────────────────────────────────
 
-/// Serializa y escribe un `WaybarOutput` en el writer dado (normalmente stdout).
+/// Serializa y escribe un `BarOutput` como JSON (modo Waybar / JSON genérico).
 ///
-/// Waybar espera una línea JSON por frame, terminada en `\n`.
-/// El `BufWriter` externo debe hacer `flush()` después de cada línea.
-pub fn write_output<W: Write>(writer: &mut W, output: &WaybarOutput) -> io::Result<()> {
+/// El lector espera una línea JSON por frame, terminada en `\n`.
+pub fn write_output<W: Write>(writer: &mut W, output: &BarOutput) -> io::Result<()> {
     let json = serde_json::to_string(output)
-        .expect("serialización WaybarOutput no debería fallar");
+        .expect("serialización BarOutput no debería fallar");
     writeln!(writer, "{json}")
 }
 
-/// Escribe solo el campo `text` (Pango markup) sin envoltorio JSON.
+/// Escribe solo el campo `text` (Pango Markup) sin envoltorio JSON.
 ///
 /// EWW usa `deflisten` que lee una línea por frame — no necesita JSON.
 pub fn write_eww_output<W: Write>(writer: &mut W, text: &str) -> io::Result<()> {
@@ -202,7 +198,7 @@ mod tests {
 
     #[test]
     fn active_genera_spans() {
-        let mut emitter = WaybarEmitter::new(ColorMode::ByAmplitude, 30);
+        let mut emitter = BarEmitter::new(ColorMode::ByAmplitude, 30);
         let out = emitter.emit(&dummy_frame(), 1.0, false);
         assert!(out.text.contains("<span"));
         assert_eq!(out.class.as_deref(), Some("peak"));
@@ -211,7 +207,7 @@ mod tests {
 
     #[test]
     fn silencio_sostenido_cambia_estado() {
-        let mut emitter = WaybarEmitter::new(ColorMode::ByAmplitude, 5);
+        let mut emitter = BarEmitter::new(ColorMode::ByAmplitude, 5);
         for _ in 0..5 {
             emitter.emit(&dummy_frame(), 0.0, true);
         }
@@ -220,7 +216,7 @@ mod tests {
 
     #[test]
     fn senyal_activa_tras_silencio() {
-        let mut emitter = WaybarEmitter::new(ColorMode::ByAmplitude, 5);
+        let mut emitter = BarEmitter::new(ColorMode::ByAmplitude, 5);
         for _ in 0..5 {
             emitter.emit(&dummy_frame(), 0.0, true);
         }
@@ -230,7 +226,7 @@ mod tests {
 
     #[test]
     fn mute_produce_markup_especial() {
-        let mut emitter = WaybarEmitter::new(ColorMode::ByAmplitude, 30);
+        let mut emitter = BarEmitter::new(ColorMode::ByAmplitude, 30);
         emitter.set_muted(true);
         let out = emitter.emit(&dummy_frame(), 0.5, false);
         assert_eq!(out.class.as_deref(), Some("muted"));
@@ -239,7 +235,7 @@ mod tests {
 
     #[test]
     fn error_produce_clase_error() {
-        let emitter = WaybarEmitter::new(ColorMode::ByAmplitude, 30);
+        let emitter = BarEmitter::new(ColorMode::ByAmplitude, 30);
         let out = emitter.emit_error();
         assert_eq!(out.class.as_deref(), Some("error"));
     }
@@ -254,7 +250,7 @@ mod tests {
 
     #[test]
     fn write_output_serializa_json() {
-        let out = WaybarOutput::text_only("test");
+        let out = BarOutput::text_only("test");
         let mut buf = Vec::new();
         write_output(&mut buf, &out).unwrap();
         let s = String::from_utf8(buf).unwrap();

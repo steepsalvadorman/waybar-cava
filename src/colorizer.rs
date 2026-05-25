@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn carga_paleta_de_wallpaper_desde_json() {
-        let dir = std::env::temp_dir().join(format!("waybar-cavars-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("eww-cavars-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("colors.json");
         std::fs::write(

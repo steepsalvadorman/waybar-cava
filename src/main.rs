@@ -2,19 +2,19 @@ mod cava;
 mod smoother;
 mod mapper;
 mod colorizer;
-mod waybar;
+mod output;
 
 use cava::{CavaConfig, CavaReader};
 use smoother::Smoother;
 use mapper::{build_frame_data, BarLayout};
 use colorizer::ColorMode;
-use waybar::{WaybarEmitter, write_output, write_eww_output};
+use output::{BarEmitter, BarOutput, write_output, write_eww_output};
 
 use std::io::{self, BufWriter, Write};
 
 // ─── Configuración ────────────────────────────────────────────────────────────
 
-/// Número de canales. Debe coincidir con `bars` en ~/.config/cava/config.
+/// Número de canales. Debe coincidir con `bars` en ~/.config/cava/eww.ini.
 const CHANNELS: usize = 16;
 
 /// Parámetros de suavizado.
@@ -41,10 +41,10 @@ fn main() -> io::Result<()> {
     let stdout = io::stdout();
     let mut writer = BufWriter::new(stdout.lock());
 
-    let config   = CavaConfig::default_binary(CHANNELS);
-    let mut reader   = CavaReader::new(io::stdin().lock(), config);
-    let mut smoother = Smoother::new(CHANNELS, ALPHA_RISE, GRAVITY);
-    let mut emitter  = WaybarEmitter::new(color_mode, SILENT_FRAMES_THRESHOLD);
+    let config    = CavaConfig::default_binary(CHANNELS);
+    let mut reader    = CavaReader::new(io::stdin().lock(), config);
+    let mut smoother  = Smoother::new(CHANNELS, ALPHA_RISE, GRAVITY);
+    let mut emitter   = BarEmitter::new(color_mode, SILENT_FRAMES_THRESHOLD);
 
     let layout = BarLayout::Compact;
 
@@ -80,10 +80,10 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn emit<W: std::io::Write>(
+fn emit<W: Write>(
     writer: &mut W,
     text: &str,
-    output: &waybar::WaybarOutput,
+    output: &BarOutput,
     eww_mode: bool,
 ) -> io::Result<()> {
     if eww_mode {
@@ -111,7 +111,7 @@ mod tests {
         let config = CavaConfig::default_binary(CHANNELS);
         let mut reader   = CavaReader::new(Cursor::new(data), config);
         let mut smoother = Smoother::new(CHANNELS, ALPHA_RISE, GRAVITY);
-        let mut emitter  = WaybarEmitter::new(ColorMode::ByAmplitude, 30);
+        let mut emitter  = BarEmitter::new(ColorMode::ByAmplitude, 30);
 
         let frame      = reader.next_frame().unwrap().unwrap();
         smoother.update(&frame.values);

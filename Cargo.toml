@@ -1,10 +1,10 @@
 [package]
-name = "waybar-cavars"
+name = "eww-cavars"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "waybar-cavars"
+name = "eww-cavars"
 path = "src/main.rs"
 
 [dependencies]
