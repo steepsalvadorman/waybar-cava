@@ -21,6 +21,10 @@ pub enum ColorMode {
     /// Un solo color fijo para todo el frame. Útil para estados especiales
     /// (mute, standby) o preferencia estética minimalista.
     Flat { color: &'static str },
+
+    /// VU meter clásico: verde (bajo) → ámbar (medio) → naranja → rojo (pico).
+    /// Paleta Gruvbox — ideal para fondo oscuro con efecto LED skeuomórfico.
+    Led,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,6 +102,21 @@ fn color_by_amplitude(amp: f32) -> String {
     color_for_amplitude_from_palette(amp, current_palette())
 }
 
+fn color_by_led(amp: f32) -> &'static str {
+    // Paleta Gruvbox oscura — legible sobre el fondo blanco glassmórfico
+    if amp < 0.001 {
+        "#c0bbb4"   // LED apagado: gris claro Gruvbox (casi invisible sobre blanco)
+    } else if amp < 0.45 {
+        "#427b58"   // verde oscuro Gruvbox — zona segura
+    } else if amp < 0.70 {
+        "#b57614"   // ámbar oscuro Gruvbox — zona de atención (= clock-time)
+    } else if amp < 0.88 {
+        "#af3a03"   // naranja Gruvbox — zona caliente (= sys-temp)
+    } else {
+        "#9d0006"   // rojo oscuro Gruvbox — pico / clip
+    }
+}
+
 fn color_by_position(pos: f32) -> String {
     let pos = pos.clamp(0.0, 1.0);
     let next = POS_RAMP
@@ -160,6 +179,7 @@ pub fn build_pango_frame(frame_data: &[(char, f32)], mode: ColorMode) -> String 
                 color_by_position(pos)
             }
             ColorMode::Flat { color } => color.to_string(),
+            ColorMode::Led => color_by_led(amp).to_string(),
         };
 
         let alpha = amp < 0.05;
@@ -186,7 +206,7 @@ pub fn build_pango_frame(frame_data: &[(char, f32)], mode: ColorMode) -> String 
 pub fn state_markup(state: SpecialState) -> &'static str {
     match state {
         SpecialState::Muted => "<span color='#888888'>󰝟</span>",
-        SpecialState::Standby => "<span color='#555555'>▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁</span>",
+        SpecialState::Standby => "<span color='#c0bbb4'>▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁</span>",
         SpecialState::Error => "<span color='#ff4444'>⚠ cava</span>",
     }
 }
@@ -271,6 +291,19 @@ mod tests {
         assert!(markup.contains("#ffffff"));
 
         assert!(!markup.contains("#69ff47"));
+    }
+
+    #[test]
+    fn led_mode_colores_por_zona() {
+        let low  = vec![('▃', 0.2)];
+        let mid  = vec![('▆', 0.6)];
+        let peak = vec![('█', 0.95)];
+        let ml = build_pango_frame(&low,  ColorMode::Led);
+        let mm = build_pango_frame(&mid,  ColorMode::Led);
+        let mp = build_pango_frame(&peak, ColorMode::Led);
+        assert!(ml.contains("#427b58"), "zona verde: {ml}");
+        assert!(mm.contains("#b57614"), "zona ámbar: {mm}");
+        assert!(mp.contains("#9d0006"), "zona roja:  {mp}");
     }
 
     #[test]

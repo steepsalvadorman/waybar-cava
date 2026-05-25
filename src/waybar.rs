@@ -182,6 +182,13 @@ pub fn write_output<W: Write>(writer: &mut W, output: &WaybarOutput) -> io::Resu
     writeln!(writer, "{json}")
 }
 
+/// Escribe solo el campo `text` (Pango markup) sin envoltorio JSON.
+///
+/// EWW usa `deflisten` que lee una línea por frame — no necesita JSON.
+pub fn write_eww_output<W: Write>(writer: &mut W, text: &str) -> io::Result<()> {
+    writeln!(writer, "{text}")
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

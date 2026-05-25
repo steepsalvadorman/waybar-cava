@@ -8,7 +8,7 @@ use cava::{CavaConfig, CavaReader};
 use smoother::Smoother;
 use mapper::{build_frame_data, BarLayout};
 use colorizer::ColorMode;
-use waybar::{WaybarEmitter, write_output};
+use waybar::{WaybarEmitter, write_output, write_eww_output};
 
 use std::io::{self, BufWriter, Write};
 
@@ -30,33 +30,35 @@ const SILENT_FRAMES_THRESHOLD: u32 = 45;
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() -> io::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    let eww_mode = args.iter().any(|a| a == "--eww");
+    let color_mode = if args.iter().any(|a| a == "--led") {
+        ColorMode::Led
+    } else {
+        ColorMode::ByAmplitude
+    };
+
     let stdout = io::stdout();
     let mut writer = BufWriter::new(stdout.lock());
 
-    let config = CavaConfig::default_binary(CHANNELS);
-    let mut reader  = CavaReader::new(io::stdin().lock(), config);
+    let config   = CavaConfig::default_binary(CHANNELS);
+    let mut reader   = CavaReader::new(io::stdin().lock(), config);
     let mut smoother = Smoother::new(CHANNELS, ALPHA_RISE, GRAVITY);
-    let mut emitter  = WaybarEmitter::new(
-        ColorMode::ByAmplitude,
-        SILENT_FRAMES_THRESHOLD,
-    );
+    let mut emitter  = WaybarEmitter::new(color_mode, SILENT_FRAMES_THRESHOLD);
 
     let layout = BarLayout::Compact;
 
     loop {
         match reader.next_frame() {
             Err(_) => {
-                // Error de I/O — emite error JSON y sigue
                 let out = emitter.emit_error();
-                write_output(&mut writer, &out)?;
+                emit(&mut writer, &out.text, &out, eww_mode)?;
                 writer.flush()?;
-                // No break: sigue intentando leer
             }
 
             Ok(None) => {
-                // EOF: emite error JSON y termina
                 let out = emitter.emit_error();
-                write_output(&mut writer, &out)?;
+                emit(&mut writer, &out.text, &out, eww_mode)?;
                 writer.flush()?;
                 break;
             }
@@ -69,13 +71,26 @@ fn main() -> io::Result<()> {
                 let frame_data = build_frame_data(smoother.values(), layout);
 
                 let out = emitter.emit(&frame_data, peak, is_silent);
-                write_output(&mut writer, &out)?;
+                emit(&mut writer, &out.text, &out, eww_mode)?;
                 writer.flush()?;
             }
         }
     }
 
     Ok(())
+}
+
+fn emit<W: std::io::Write>(
+    writer: &mut W,
+    text: &str,
+    output: &waybar::WaybarOutput,
+    eww_mode: bool,
+) -> io::Result<()> {
+    if eww_mode {
+        write_eww_output(writer, text)
+    } else {
+        write_output(writer, output)
+    }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
