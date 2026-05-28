@@ -1,7 +1,7 @@
 /// Glifos de barra ordenados de menor a mayor amplitud.
 ///
 /// Doble bloque para más impacto visual y altura.
-const BAR_GLYPHS: &[char] = &[' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█', '█'];
+const BAR_GLYPHS: &[char] = &['▁', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█', '█'];
 
 /// Glifos alternativos más "retro" (ASCII puro + llenos).
 /// Descomenta y asigna a `BAR_GLYPHS` si prefieres este estilo.
@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn limites() {
-        assert_eq!(amp_to_glyph(0.0), ' ');
+        assert_eq!(amp_to_glyph(0.0), '▁');
         assert_eq!(amp_to_glyph(1.0), '█');
     }
 

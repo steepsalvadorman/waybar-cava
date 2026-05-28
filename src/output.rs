@@ -5,8 +5,7 @@ use crate::colorizer::{self, ColorMode, SpecialState};
 
 // ─── Estructura de salida ──────────────────────────────────────────────────────
 
-/// Payload JSON por frame. Compatible con Waybar (`return-type = json`)
-/// y con cualquier lector de JSON por línea.
+/// Payload JSON por frame. Compatible con AGS (`subprocess`) y Waybar (`return-type = json`).
 /// Los campos opcionales se omiten si son `None` para mantener el output limpio.
 #[derive(Serialize)]
 pub struct BarOutput {
@@ -180,7 +179,7 @@ pub fn write_output<W: Write>(writer: &mut W, output: &BarOutput) -> io::Result<
 
 /// Escribe solo el campo `text` (Pango Markup) sin envoltorio JSON.
 ///
-/// EWW usa `deflisten` que lee una línea por frame — no necesita JSON.
+/// AGS usa `subprocess` que lee una línea por frame — no necesita JSON.
 pub fn write_eww_output<W: Write>(writer: &mut W, text: &str) -> io::Result<()> {
     writeln!(writer, "{text}")
 }

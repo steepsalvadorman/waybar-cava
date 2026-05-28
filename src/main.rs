@@ -31,7 +31,7 @@ const SILENT_FRAMES_THRESHOLD: u32 = 45;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let eww_mode = args.iter().any(|a| a == "--eww");
+    let eww_mode = args.iter().any(|a| a == "--ags" || a == "--eww");
     let color_mode = if args.iter().any(|a| a == "--led") {
         ColorMode::Led
     } else {

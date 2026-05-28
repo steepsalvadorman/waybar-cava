@@ -1,4 +1,4 @@
 #!/bin/bash
-# Inicia CAVA y lo conecta al visualizador EWW.
-# Usado por deflisten en eww.yuck.
-exec cava -p "$HOME/.config/cava/eww.ini" | "$HOME/.local/bin/eww-cavars" --eww --led
+# Inicia CAVA y lo conecta al visualizador AGS.
+# Usado por subprocess() en el widget Right.tsx de AGS.
+exec cava -p "$HOME/.config/cava/ags.ini" | "$HOME/.local/bin/ags-cavars" --ags --led

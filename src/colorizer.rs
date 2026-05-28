@@ -103,17 +103,17 @@ fn color_by_amplitude(amp: f32) -> String {
 }
 
 fn color_by_led(amp: f32) -> &'static str {
-    // Paleta Gruvbox oscura — legible sobre el fondo blanco glassmórfico
+    // City pop VU — teal → dorado → coral → rosa; armonía con paleta wal azul-fría
     if amp < 0.001 {
-        "#c0bbb4"   // LED apagado: gris claro Gruvbox (casi invisible sobre blanco)
+        "#8898b8"   // periwinkle apagado — se funde con el glass azul
     } else if amp < 0.45 {
-        "#427b58"   // verde oscuro Gruvbox — zona segura
+        "#28b0a0"   // teal menta — enlaza con los azules del tema
     } else if amp < 0.70 {
-        "#b57614"   // ámbar oscuro Gruvbox — zona de atención (= clock-time)
+        "#d8a028"   // dorado cálido — contraste suave sobre blanco
     } else if amp < 0.88 {
-        "#af3a03"   // naranja Gruvbox — zona caliente (= sys-temp)
+        "#e06040"   // coral city pop — zona caliente
     } else {
-        "#9d0006"   // rojo oscuro Gruvbox — pico / clip
+        "#c83068"   // rosa vivo — pico
     }
 }
 
@@ -155,7 +155,7 @@ pub fn build_pango_frame(frame_data: &[(char, f32)], mode: ColorMode) -> String 
             out.push_str("<span color='");
             out.push_str(&color);
             if alpha {
-                out.push_str("' alpha='40%'>");
+                out.push_str("' alpha='80%'>");
             } else {
                 out.push_str("'>");
             }
@@ -182,7 +182,7 @@ pub fn build_pango_frame(frame_data: &[(char, f32)], mode: ColorMode) -> String 
             ColorMode::Led => color_by_led(amp).to_string(),
         };
 
-        let alpha = amp < 0.05;
+        let alpha = amp < 0.001; // solo LED apagado lleva alpha reducido
 
         match current.as_mut() {
             Some((current_color, current_alpha, text)) if *current_color == color && *current_alpha == alpha => {
@@ -206,7 +206,7 @@ pub fn build_pango_frame(frame_data: &[(char, f32)], mode: ColorMode) -> String 
 pub fn state_markup(state: SpecialState) -> &'static str {
     match state {
         SpecialState::Muted => "<span color='#888888'>󰝟</span>",
-        SpecialState::Standby => "<span color='#c0bbb4'>▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁</span>",
+        SpecialState::Standby => "<span color='#8a8ea8'>▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁</span>",
         SpecialState::Error => "<span color='#ff4444'>⚠ cava</span>",
     }
 }
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn barra_baja_tiene_alpha() {
-        let data = vec![('▁', 0.01)];
+        let data = vec![('▁', 0.0005)];
         let markup = build_pango_frame(&data, ColorMode::ByAmplitude);
         assert!(markup.contains("alpha="), "barras casi vacías deben tener alpha reducido");
     }
@@ -301,9 +301,9 @@ mod tests {
         let ml = build_pango_frame(&low,  ColorMode::Led);
         let mm = build_pango_frame(&mid,  ColorMode::Led);
         let mp = build_pango_frame(&peak, ColorMode::Led);
-        assert!(ml.contains("#427b58"), "zona verde: {ml}");
-        assert!(mm.contains("#b57614"), "zona ámbar: {mm}");
-        assert!(mp.contains("#9d0006"), "zona roja:  {mp}");
+        assert!(ml.contains("#28b0a0"), "zona teal: {ml}");
+        assert!(mm.contains("#d8a028"), "zona dorado: {mm}");
+        assert!(mp.contains("#c83068"), "zona rosa: {mp}");
     }
 
     #[test]

@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "eww-cavars"
+name = "ags-cavars"
 version = "0.1.0"
 dependencies = [
  "serde",
